@@ -1,0 +1,61 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pannes Hydro-Québec — Ajouter un emplacement",
+        "description": "Configurez un emplacement à surveiller pour les pannes et les interruptions planifiées d'Hydro-Québec. Les données sont actualisées toutes les 15 minutes.\n\nSource : {docs_url}",
+        "data": {
+          "name": "Nom de l'emplacement",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius_km": "Rayon de recherche (km)"
+        },
+        "data_description": {
+          "name": "Un nom convivial pour cet emplacement (ex. : Maison, Chalet, Bureau)",
+          "latitude": "Latitude de l'emplacement à surveiller",
+          "longitude": "Longitude de l'emplacement à surveiller",
+          "radius_km": "Rayon en kilomètres pour la recherche de pannes autour de cet emplacement"
+        }
+      }
+    },
+    "error": {
+      "invalid_coordinates": "Coordonnées invalides — veuillez entrer des valeurs numériques valides.",
+      "name_required": "Un nom d'emplacement est requis.",
+      "cannot_connect": "Impossible de se connecter à l'API Hydro-Québec. Veuillez réessayer plus tard."
+    },
+    "abort": {
+      "already_configured": "Cet emplacement est déjà configuré."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Gérer les emplacements",
+        "menu_options": {
+          "add_location": "Ajouter un emplacement",
+          "remove_location": "Supprimer un emplacement",
+          "done": "Terminer"
+        }
+      },
+      "add_location": {
+        "title": "Ajouter un emplacement",
+        "data": {
+          "name": "Nom de l'emplacement",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius_km": "Rayon de recherche (km)"
+        }
+      },
+      "remove_location": {
+        "title": "Supprimer un emplacement",
+        "data": {
+          "location": "Sélectionner l'emplacement à supprimer"
+        }
+      }
+    },
+    "error": {
+      "invalid_coordinates": "Coordonnées invalides — veuillez entrer des valeurs numériques valides.",
+      "name_required": "Un nom d'emplacement est requis."
+    }
+  }
+}
