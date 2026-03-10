@@ -22,7 +22,7 @@ Monitor **Hydro-Québec power outages and planned service interruptions** near a
 ### Via HACS (recommended)
 
 1. Open HACS → Integrations → ⋮ → **Custom repositories**
-2. Add `https://github.com/moimeme81/info-pannes` as an **Integration**
+2. Add `https://github.com/YOUR_USERNAME/hydroquebec-outages-ha` as an **Integration**
 3. Search for **Hydro-Québec Outages** and install
 4. Restart Home Assistant
 
@@ -147,3 +147,7 @@ entities:
 - **Coverage**: All of Québec
 
 ---
+
+## License
+
+MIT

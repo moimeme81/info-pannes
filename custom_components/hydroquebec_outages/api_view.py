@@ -36,7 +36,7 @@ class HydroQuebecDataView(HomeAssistantView):
 
     url = API_ENDPOINT_DATA
     name = "api:hydroquebec_outages:data"
-    requires_auth = True
+    requires_auth = False  # Panel iframe is behind HA auth; outage data is public
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass

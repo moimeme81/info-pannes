@@ -8,105 +8,148 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; font-family: sans-serif; background: #1a1a2e; color: #eee; }
+  html, body { height: 100%; font-family: Roboto, sans-serif; overflow: hidden; }
 
-  #app { display: flex; flex-direction: column; height: 100%; }
+  #app { display: flex; flex-direction: column; height: 100%; background: #fff; }
 
-  /* ── Header ── */
-  #header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 0 16px; height: 52px; flex-shrink: 0;
-    background: #003da5; color: #fff;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    z-index: 10;
+  /* Header — matches HA's toolbar style */
+  #toolbar {
+    display: flex; align-items: center; gap: 10px;
+    height: 56px; padding: 0 16px; flex-shrink: 0;
+    background: var(--app-header-background-color, #03a9f4);
+    color: var(--app-header-text-color, #fff);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
   }
-  #header h1 { font-size: 16px; font-weight: 600; flex: 1; }
-  #last-updated { font-size: 12px; opacity: 0.8; }
+  #toolbar svg { flex-shrink: 0; }
+  #toolbar h1 { font-size: 20px; font-weight: 400; flex: 1; letter-spacing: 0.01em; }
+  #last-updated { font-size: 12px; opacity: 0.85; white-space: nowrap; }
   #refresh-btn {
-    cursor: pointer; padding: 5px 12px; font-size: 13px; font-weight: 500;
-    border: 1.5px solid rgba(255,255,255,0.6); border-radius: 6px;
-    background: transparent; color: #fff;
-    transition: background 0.15s;
+    cursor: pointer; padding: 6px 14px; font-size: 13px; font-weight: 500;
+    border: 1.5px solid rgba(255,255,255,0.7); border-radius: 20px;
+    background: transparent; color: #fff; letter-spacing: 0.03em;
+    transition: background 0.15s; white-space: nowrap;
   }
-  #refresh-btn:hover { background: rgba(255,255,255,0.15); }
-  #refresh-btn:disabled { opacity: 0.5; cursor: default; }
+  #refresh-btn:hover   { background: rgba(255,255,255,0.2); }
+  #refresh-btn:active  { background: rgba(255,255,255,0.35); }
+  #refresh-btn:disabled { opacity: 0.45; cursor: default; }
 
-  /* ── Legend ── */
-  #legend {
-    display: flex; flex-wrap: wrap; gap: 6px 16px;
-    padding: 6px 16px; flex-shrink: 0;
-    background: #111827; border-bottom: 1px solid #2d3748;
-    font-size: 12px;
+  /* Status strip */
+  #status-strip {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px;
+    padding: 5px 16px; font-size: 12px; flex-shrink: 0;
+    background: #f5f5f5; border-bottom: 1px solid #e0e0e0;
+    color: #555;
   }
   .leg { display: flex; align-items: center; gap: 5px; }
-  .swatch {
-    width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid;
-    flex-shrink: 0;
-  }
-  .swatch-outage  { background: rgba(229,57,53,0.45);  border-color: #b71c1c; }
-  .swatch-planned { background: rgba(251,140,0,0.35);  border-color: #e65100; }
-  .swatch-pin     { background: #1565c0; border-color: #0d47a1; border-radius: 50%; }
-  #status-msg { margin-left: auto; font-size: 12px; color: #90caf9; }
+  .sw  { width: 13px; height: 13px; border-radius: 3px; border: 1.5px solid; flex-shrink: 0; }
+  .sw-out  { background: rgba(229,57,53,0.4);  border-color: #b71c1c; }
+  .sw-plan { background: rgba(251,140,0,0.35); border-color: #e65100; }
+  .sw-pin  { background: #1565c0; border-color: #0d47a1; border-radius: 50%; }
+  #status-msg { margin-left: auto; color: #1565c0; font-weight: 500; }
 
-  /* ── Map ── */
-  #map { flex: 1; }
+  /* Map fills remaining space */
+  #map { flex: 1; min-height: 0; }
 
-  /* ── Toast overlay ── */
-  #toast {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: rgba(0,0,0,0.75); color: #fff; padding: 8px 18px;
-    border-radius: 20px; font-size: 13px; pointer-events: none;
-    opacity: 0; transition: opacity 0.3s; z-index: 9999;
+  /* Leaflet popup tweak */
+  .leaflet-popup-content { font-size: 13px; line-height: 1.6; min-width: 180px; }
+  .leaflet-popup-content b { color: #333; }
+
+  /* Error banner */
+  #error-banner {
+    display: none; position: absolute; top: 56px; left: 0; right: 0; z-index: 1000;
+    background: #c62828; color: #fff; padding: 10px 16px; font-size: 13px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
-  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="header">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFD600" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <div id="toolbar">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+         stroke="#FFD600" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
     </svg>
     <h1>Hydro-Québec Outages</h1>
     <span id="last-updated"></span>
-    <button id="refresh-btn">↺ Refresh</button>
+    <button id="refresh-btn">↺&nbsp;Refresh</button>
   </div>
-  <div id="legend">
-    <div class="leg"><div class="swatch swatch-outage"></div><span>Active outage area</span></div>
-    <div class="leg"><div class="swatch swatch-planned"></div><span>Planned interruption area</span></div>
-    <div class="leg"><div class="swatch swatch-pin"></div><span>Monitored location</span></div>
-    <span id="status-msg">Loading…</span>
+  <div id="status-strip">
+    <div class="leg"><div class="sw sw-out"></div><span>Active outage</span></div>
+    <div class="leg"><div class="sw sw-plan"></div><span>Planned interruption</span></div>
+    <div class="leg"><div class="sw sw-pin"></div><span>Your location</span></div>
+    <span id="status-msg">Initialising…</span>
   </div>
   <div id="map"></div>
 </div>
-<div id="toast"></div>
+<div id="error-banner"></div>
 
 <script>
-const DATA_URL = "/api/hydroquebec_outages/data";
+'use strict';
 
-const COLOR = {
-  outage:  { fill: "#e53935", border: "#b71c1c" },
-  planned: { fill: "#fb8c00", border: "#e65100" },
-  pin:     "#1565c0",
-  radius:  { fill: "rgba(21,101,192,0.07)", border: "#1565c0" },
+// ── Config from URL params ───────────────────────────────────────────────────
+const params    = new URLSearchParams(window.location.search);
+let   locations = [];
+try { locations = JSON.parse(params.get('locations') || '[]'); } catch(_) {}
+
+const DATA_URL = '/api/hydroquebec_outages/data';
+
+const C = {
+  out:  { fill:'#e53935', border:'#b71c1c' },
+  plan: { fill:'#fb8c00', border:'#e65100' },
+  pin:  '#1565c0',
+  ring: { fill:'rgba(21,101,192,0.07)', border:'#1565c0' },
 };
 
-// ── KML parser ──────────────────────────────────────────────────────────────
-function parseKmlPolygons(kml) {
+// ── Auth ─────────────────────────────────────────────────────────────────────
+// HA stores auth in localStorage.  The key is "hassTokens" and contains an
+// object of { [clientId]: { access_token, token_type, expires_in, ... } }
+// We also listen for the postMessage that the HA frontend sends to iframes.
+let _token = null;
+
+function getToken() {
+  if (_token) return _token;
+  // Try localStorage — works when served from /local/
+  try {
+    const raw = localStorage.getItem('hassTokens');
+    if (raw) {
+      const obj = JSON.parse(raw);
+      // Value can be the object itself or nested; grab first access_token
+      for (const v of Object.values(obj)) {
+        const t = (typeof v === 'object') ? (v.access_token || v.token) : v;
+        if (t) { _token = t; return t; }
+      }
+    }
+  } catch(_) {}
+  return null;
+}
+
+// HA sends a postMessage with auth info to embedded iframes
+window.addEventListener('message', (ev) => {
+  if (!ev.data) return;
+  const d = ev.data;
+  // Various HA versions use different shapes
+  const tok = d.access_token
+           || d.token
+           || d?.result?.access_token
+           || (d.type === 'auth/token' ? d.access_token : null);
+  if (tok) { _token = tok; }
+});
+
+// ── KML parser ───────────────────────────────────────────────────────────────
+function parseKml(kml) {
   if (!kml) return [];
-  const doc = new DOMParser().parseFromString(kml, "text/xml");
+  const doc = new DOMParser().parseFromString(kml, 'text/xml');
   const out = [];
-  doc.querySelectorAll("Placemark").forEach(pm => {
-    const name = pm.querySelector("name")?.textContent?.trim() ?? "";
-    const desc = pm.querySelector("description")?.textContent?.trim() ?? "";
-    pm.querySelectorAll("Polygon").forEach(poly => {
-      const el = poly.querySelector("outerBoundaryIs coordinates")
-                 || poly.querySelector("outerBoundaryIs LinearRing coordinates")
-                 || poly.querySelector("coordinates");
+  doc.querySelectorAll('Placemark').forEach(pm => {
+    const name = pm.querySelector('name')?.textContent?.trim() ?? '';
+    const desc = pm.querySelector('description')?.textContent?.trim() ?? '';
+    pm.querySelectorAll('Polygon').forEach(poly => {
+      const el = poly.querySelector('outerBoundaryIs coordinates')
+              || poly.querySelector('coordinates');
       if (!el) return;
       const coords = el.textContent.trim().split(/\s+/).map(t => {
-        const p = t.split(",");
-        const lon = parseFloat(p[0]), lat = parseFloat(p[1]);
+        const [lonS, latS] = t.split(',');
+        const lon = parseFloat(lonS), lat = parseFloat(latS);
         return (isNaN(lat)||isNaN(lon)) ? null : [lat, lon];
       }).filter(Boolean);
       if (coords.length > 2) out.push({ name, desc, coords });
@@ -115,209 +158,168 @@ function parseKmlPolygons(kml) {
   return out;
 }
 
-// ── Get HA auth token from parent frame or cookie ───────────────────────────
-function getToken() {
-  try {
-    // When embedded as a panel, HA passes the token via postMessage or sets it
-    // in the parent. We try localStorage (HA stores it there).
-    const raw = localStorage.getItem("hassTokens");
-    if (raw) {
-      const t = JSON.parse(raw);
-      // hassTokens is an object keyed by clientId; grab first access_token
-      const entry = Object.values(t)[0];
-      return entry?.access_token ?? entry?.token ?? null;
-    }
-  } catch (_) {}
-  return null;
-}
+// ── Map init ─────────────────────────────────────────────────────────────────
+const defaultCentre = locations[0]
+  ? [locations[0].latitude, locations[0].longitude]
+  : [46.8, -71.2];
 
-// ── Map setup ────────────────────────────────────────────────────────────────
-const map = L.map("map").setView([46.8, -71.2], 7);
+const map = L.map('map', { zoomControl: true }).setView(defaultCentre, 9);
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   maxZoom: 19,
 }).addTo(map);
 
-const layers = {
-  outage:  L.layerGroup().addTo(map),
-  planned: L.layerGroup().addTo(map),
-  pins:    L.layerGroup().addTo(map),
-  radius:  L.layerGroup().addTo(map),
+const lyr = {
+  out:    L.layerGroup().addTo(map),
+  plan:   L.layerGroup().addTo(map),
+  pins:   L.layerGroup().addTo(map),
+  radius: L.layerGroup().addTo(map),
 };
 
 L.control.layers(null, {
-  "🔴 Active outages":        layers.outage,
-  "🟠 Planned interruptions": layers.planned,
-  "📍 Monitored locations":   layers.pins,
-  "⭕ Search radius":          layers.radius,
-}, { collapsed: false }).addTo(map);
+  '🔴 Active outages':        lyr.out,
+  '🟠 Planned interruptions': lyr.plan,
+  '📍 Your locations':         lyr.pins,
+  '⭕ Search radius':           lyr.radius,
+}, { collapsed: false, position: 'topright' }).addTo(map);
+
+// Draw location pins immediately (don't wait for API)
+locations.forEach(loc => {
+  if (loc.latitude == null) return;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="width:14px;height:14px;border-radius:50%;
+      background:${C.pin};border:2.5px solid #fff;
+      box-shadow:0 1px 5px rgba(0,0,0,0.45)"></div>`,
+    iconAnchor: [7, 7],
+  });
+  L.marker([loc.latitude, loc.longitude], { icon })
+    .bindPopup(`<b>📍 ${loc.name ?? 'Location'}</b>`)
+    .addTo(lyr.pins);
+  if (loc.radius_km) {
+    L.circle([loc.latitude, loc.longitude], {
+      radius: loc.radius_km * 1000,
+      color: C.ring.border, fillColor: C.ring.fill,
+      fillOpacity: 1, weight: 1.5, dashArray: '5 5',
+    }).bindTooltip(`${loc.name ?? 'Location'} — ${loc.radius_km} km`, { sticky: true })
+      .addTo(lyr.radius);
+  }
+});
 
 // ── Fetch & render ───────────────────────────────────────────────────────────
 async function fetchAndRender() {
-  setStatus("Fetching…");
-  document.getElementById("refresh-btn").disabled = true;
-
+  setStatus('Fetching…');
+  setBtn(false);
   try {
-    const token = getToken();
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const resp = await fetch(DATA_URL, { headers });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    const tok = getToken();
+    const hdrs = tok ? { Authorization: `Bearer ${tok}` } : {};
+    const resp = await fetch(DATA_URL, { headers: hdrs });
+    if (resp.status === 401) {
+      // Token missing/expired — data endpoint requires auth
+      showError('Authentication failed. Please reload the page.');
+      setStatus('Auth error');
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     render(data);
   } catch (err) {
-    console.error("[HQ Panel]", err);
-    setStatus("⚠ " + err.message);
-    toast("Error: " + err.message);
+    console.error('[HQ Panel]', err);
+    setStatus('⚠ ' + err.message);
+    showError(err.message);
   } finally {
-    document.getElementById("refresh-btn").disabled = false;
+    setBtn(true);
   }
 }
 
 function render(data) {
-  Object.values(layers).forEach(l => l.clearLayers());
+  lyr.out.clearLayers();
+  lyr.plan.clearLayers();
 
-  const bisPolys = parseKmlPolygons(data.bis_kml);
-  const aipPolys = parseKmlPolygons(data.aip_kml);
+  const bisPolys = parseKml(data.bis_kml);
+  const aipPolys = parseKml(data.aip_kml);
 
-  // ── Active outage polygons ─────────────────────────────────────────────
   bisPolys.forEach(({ name, desc, coords }) => {
     L.polygon(coords, {
-      color: COLOR.outage.border, fillColor: COLOR.outage.fill,
-      fillOpacity: 0.38, weight: 1.5,
-    }).bindPopup(popupHtml("🔴 Active Outage Area", name, desc))
-      .addTo(layers.outage);
+      color: C.out.border, fillColor: C.out.fill, fillOpacity: 0.38, weight: 1.5,
+    }).bindPopup(mkPopup('🔴 Active Outage Area', name, desc)).addTo(lyr.out);
   });
 
-  // ── Planned interruption polygons ──────────────────────────────────────
   aipPolys.forEach(({ name, desc, coords }) => {
     L.polygon(coords, {
-      color: COLOR.planned.border, fillColor: COLOR.planned.fill,
-      fillOpacity: 0.30, weight: 1.5, dashArray: "7 5",
-    }).bindPopup(popupHtml("🟠 Planned Interruption Area", name, desc))
-      .addTo(layers.planned);
+      color: C.plan.border, fillColor: C.plan.fill,
+      fillOpacity: 0.30, weight: 1.5, dashArray: '7 5',
+    }).bindPopup(mkPopup('🟠 Planned Interruption Area', name, desc)).addTo(lyr.plan);
   });
 
-  // ── Outage point markers ───────────────────────────────────────────────
   (data.outages ?? []).forEach(o => {
     if (o.latitude == null) return;
     L.circleMarker([o.latitude, o.longitude], {
-      radius: 8, color: COLOR.outage.border,
-      fillColor: COLOR.outage.fill, fillOpacity: 0.9, weight: 2,
-    }).bindPopup(`
-      <b>🔴 Active Outage</b><br>
-      <b>Customers affected:</b> ${o.customers_affected ?? "?"}<br>
-      <b>Cause:</b> ${o.cause ?? "?"}<br>
-      <b>Status:</b> ${o.status ?? "?"}<br>
-      <b>Started:</b> ${o.start_time ?? "?"}<br>
-      <b>Est. restoration:</b> ${o.estimated_end_time ?? "?"}
-    `).addTo(layers.outage);
+      radius: 8, color: C.out.border, fillColor: C.out.fill, fillOpacity: 0.9, weight: 2,
+    }).bindPopup(`<b>🔴 Active Outage</b><br>
+      <b>Customers:</b> ${o.customers_affected ?? '?'}<br>
+      <b>Cause:</b> ${o.cause ?? '?'}<br>
+      <b>Status:</b> ${o.status ?? '?'}<br>
+      <b>Started:</b> ${o.start_time ?? '?'}<br>
+      <b>Est. end:</b> ${o.estimated_end_time ?? '?'}`).addTo(lyr.out);
   });
 
-  // ── Planned point markers ──────────────────────────────────────────────
   (data.planned ?? []).forEach(p => {
     if (p.latitude == null) return;
     L.circleMarker([p.latitude, p.longitude], {
-      radius: 8, color: COLOR.planned.border,
-      fillColor: COLOR.planned.fill, fillOpacity: 0.9, weight: 2,
-    }).bindPopup(`
-      <b>🟠 Planned Interruption</b><br>
-      <b>Customers affected:</b> ${p.customers_affected ?? "?"}<br>
-      <b>Cause:</b> ${p.cause ?? "?"}<br>
-      <b>Status:</b> ${p.status ?? "?"}<br>
-      <b>Scheduled start:</b> ${p.planned_start ?? "?"}<br>
-      <b>Scheduled end:</b> ${p.planned_end ?? "?"}
-    `).addTo(layers.planned);
+      radius: 8, color: C.plan.border, fillColor: C.plan.fill, fillOpacity: 0.9, weight: 2,
+    }).bindPopup(`<b>🟠 Planned Interruption</b><br>
+      <b>Customers:</b> ${p.customers_affected ?? '?'}<br>
+      <b>Cause:</b> ${p.cause ?? '?'}<br>
+      <b>Status:</b> ${p.status ?? '?'}<br>
+      <b>Start:</b> ${p.planned_start ?? '?'}<br>
+      <b>End:</b> ${p.planned_end ?? '?'}`).addTo(lyr.plan);
   });
 
-  // ── Location pins & radius rings ───────────────────────────────────────
-  // Read locations from URL params (set by __init__.py panel registration)
-  const urlParams = new URLSearchParams(window.location.search);
-  let locations = [];
-  try { locations = JSON.parse(decodeURIComponent(urlParams.get("locations") ?? "[]")); } catch(_) {}
-
-  locations.forEach(loc => {
-    if (loc.latitude == null) return;
-    const pinIcon = L.divIcon({
-      className: "",
-      html: `<div style="width:14px;height:14px;border-radius:50%;
-        background:${COLOR.pin};border:2.5px solid #fff;
-        box-shadow:0 1px 5px rgba(0,0,0,0.5)"></div>`,
-      iconAnchor: [7, 7],
-    });
-    L.marker([loc.latitude, loc.longitude], { icon: pinIcon })
-      .bindPopup(`<b>📍 ${loc.name ?? "Location"}</b>`)
-      .addTo(layers.pins);
-
-    if (loc.radius_km) {
-      L.circle([loc.latitude, loc.longitude], {
-        radius: loc.radius_km * 1000,
-        color: COLOR.radius.border, fillColor: COLOR.radius.fill,
-        fillOpacity: 1, weight: 1.5, dashArray: "5 5",
-      }).bindTooltip(`${loc.name ?? "Location"} — ${loc.radius_km} km`, { sticky: true })
-        .addTo(layers.radius);
-    }
-  });
-
-  // ── Fit bounds to outage polygons if any ──────────────────────────────
+  // Fit to outage polygons if any exist
   const allPolys = [...bisPolys, ...aipPolys];
-  if (allPolys.length > 0) {
+  if (allPolys.length) {
     try {
-      const allCoords = allPolys.flatMap(p => p.coords);
-      map.fitBounds(allCoords, { padding: [40, 40] });
+      map.fitBounds(allPolys.flatMap(p => p.coords), { padding: [40, 40] });
     } catch(_) {}
-  } else if (locations.length > 0) {
-    const loc = locations[0];
-    map.setView([loc.latitude, loc.longitude], 11);
   }
 
-  // ── Status bar ─────────────────────────────────────────────────────────
-  const outCount  = (data.outages  ?? []).length;
-  const planCount = (data.planned  ?? []).length;
-  const polyCount = bisPolys.length + aipPolys.length;
+  const outN  = (data.outages  ?? []).length;
+  const planN = (data.planned  ?? []).length;
+  const polyN = allPolys.length;
   setStatus(
-    `${outCount} active outage${outCount !== 1 ? "s" : ""}` +
-    (planCount ? `, ${planCount} planned` : "") +
-    (polyCount ? ` · ${polyCount} area polygon${polyCount !== 1 ? "s" : ""}` : " · no polygon data")
+    `${outN} active outage${outN !== 1 ? 's' : ''}` +
+    (planN ? `, ${planN} planned` : '') +
+    ` · ${polyN} polygon${polyN !== 1 ? 's' : ''}`
   );
 
   const lu = data.last_updated
-    ? new Date(data.last_updated + "Z").toLocaleTimeString()
-    : "";
-  document.getElementById("last-updated").textContent = lu ? `Updated ${lu}` : "";
+    ? new Date(data.last_updated + 'Z').toLocaleTimeString()
+    : '';
+  document.getElementById('last-updated').textContent = lu ? `Updated ${lu}` : '';
+
+  // Invalidate size in case the iframe resized during load
+  map.invalidateSize();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function popupHtml(title, name, desc) {
-  return `<b>${title}</b>${name ? `<br>${name}` : ""}${desc ? `<br><small>${desc}</small>` : ""}`;
+function mkPopup(title, name, desc) {
+  return `<b>${title}</b>${name ? `<br>${name}` : ''}${desc ? `<br><small>${desc}</small>` : ''}`;
+}
+function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
+function setBtn(enabled) { document.getElementById('refresh-btn').disabled = !enabled; }
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 6000);
 }
 
-function setStatus(msg) {
-  document.getElementById("status-msg").textContent = msg;
-}
+document.getElementById('refresh-btn').addEventListener('click', fetchAndRender);
 
-function toast(msg) {
-  const el = document.getElementById("toast");
-  el.textContent = msg;
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 3500);
-}
-
-// ── Init ─────────────────────────────────────────────────────────────────────
-document.getElementById("refresh-btn").addEventListener("click", fetchAndRender);
-
-// HA panel iframes receive a token via postMessage from the parent
-window.addEventListener("message", e => {
-  if (e.data?.type === "auth/token" || e.data?.access_token) {
-    window._haToken = e.data.access_token ?? e.data?.result?.access_token;
-  }
-});
-
-// Override getToken to also check the postMessage token
-const _origGetToken = getToken;
-window.getToken = function() { return window._haToken ?? _origGetToken(); };
-
-fetchAndRender();
+// Kick off — small delay lets the iframe settle and HA postMessage arrive
+setTimeout(fetchAndRender, 300);
 setInterval(fetchAndRender, 15 * 60 * 1000);
 </script>
 </body>
