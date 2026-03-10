@@ -1,0 +1,6 @@
+{
+  "name": "Hydro-Québec Outages",
+  "description": "Monitor Hydro-Québec power outages and planned interruptions near your location.",
+  "render_readme": true,
+  "homeassistant": "2023.1.0"
+}
