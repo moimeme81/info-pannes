@@ -68,3 +68,11 @@ SENSOR_ACTIVE_OUTAGE = "active_outage"
 SENSOR_PLANNED_INTERRUPTION = "planned_interruption"
 SENSOR_NEARBY_OUTAGES_COUNT = "nearby_outages_count"
 SENSOR_NEARBY_PLANNED_COUNT = "nearby_planned_count"
+
+# KMZ polygon endpoints
+BIS_POLY_URL = f"{API_BASE}/bispoly{{version}}.kmz"
+AIP_POLY_URL = f"{API_BASE}/aippoly{{version}}.kmz"
+
+# HA HTTP API paths (served by our api_view)
+API_ENDPOINT_BASE = "/api/hydroquebec_outages"
+API_ENDPOINT_DATA = f"{API_ENDPOINT_BASE}/data"
