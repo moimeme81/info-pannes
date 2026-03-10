@@ -7,9 +7,8 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
@@ -25,24 +24,19 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _location_schema(
-    default_name: str = "",
-    default_lat: float | None = None,
-    default_lon: float | None = None,
+    default_name: str = "Home",
+    default_lat: float = 45.5017,
+    default_lon: float = -73.5673,
     default_radius: float = DEFAULT_RADIUS_KM,
 ) -> vol.Schema:
+    """Build a voluptuous schema for a monitored location."""
     return vol.Schema(
         {
             vol.Required(CONF_LOCATION_NAME, default=default_name): str,
-            vol.Required(
-                CONF_LATITUDE,
-                default=default_lat,
-            ): selector.selector({"number": {"min": -90, "max": 90, "step": 0.000001, "mode": "box"}}),
-            vol.Required(
-                CONF_LONGITUDE,
-                default=default_lon,
-            ): selector.selector({"number": {"min": -180, "max": 180, "step": 0.000001, "mode": "box"}}),
-            vol.Required(CONF_RADIUS_KM, default=default_radius): selector.selector(
-                {"number": {"min": 0.5, "max": 100, "step": 0.5, "unit_of_measurement": "km", "mode": "slider"}}
+            vol.Required(CONF_LATITUDE, default=default_lat): vol.Coerce(float),
+            vol.Required(CONF_LONGITUDE, default=default_lon): vol.Coerce(float),
+            vol.Required(CONF_RADIUS_KM, default=default_radius): vol.All(
+                vol.Coerce(float), vol.Range(min=0.1, max=200)
             ),
         }
     )
@@ -59,75 +53,93 @@ class HydroQuebecOutagesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """First step: add the first location."""
+        """First step: configure the first location."""
         errors: dict[str, str] = {}
 
-        # Pre-fill with HA's configured home location
-        home_lat = self.hass.config.latitude
-        home_lon = self.hass.config.longitude
+        home_lat = self.hass.config.latitude or 45.5017
+        home_lon = self.hass.config.longitude or -73.5673
 
         if user_input is not None:
             try:
+                name = str(user_input[CONF_LOCATION_NAME]).strip()
                 lat = float(user_input[CONF_LATITUDE])
                 lon = float(user_input[CONF_LONGITUDE])
                 radius = float(user_input[CONF_RADIUS_KM])
-                name = str(user_input[CONF_LOCATION_NAME]).strip()
+
                 if not name:
                     errors[CONF_LOCATION_NAME] = "name_required"
+                elif not (-90 <= lat <= 90):
+                    errors[CONF_LATITUDE] = "invalid_coordinates"
+                elif not (-180 <= lon <= 180):
+                    errors[CONF_LONGITUDE] = "invalid_coordinates"
                 else:
-                    self._locations = [
-                        {
-                            CONF_LOCATION_NAME: name,
-                            CONF_LATITUDE: lat,
-                            CONF_LONGITUDE: lon,
-                            CONF_RADIUS_KM: radius,
-                        }
-                    ]
                     return self.async_create_entry(
                         title=name,
-                        data={CONF_LOCATIONS: self._locations},
+                        data={
+                            CONF_LOCATIONS: [
+                                {
+                                    CONF_LOCATION_NAME: name,
+                                    CONF_LATITUDE: lat,
+                                    CONF_LONGITUDE: lon,
+                                    CONF_RADIUS_KM: radius,
+                                }
+                            ]
+                        },
                     )
             except (ValueError, TypeError):
                 errors["base"] = "invalid_coordinates"
 
-        schema = _location_schema(
-            default_name="Home",
-            default_lat=home_lat,
-            default_lon=home_lon,
-        )
-
         return self.async_show_form(
             step_id="user",
-            data_schema=schema,
+            data_schema=_location_schema(
+                default_lat=home_lat,
+                default_lon=home_lon,
+            ),
             errors=errors,
-            description_placeholders={
-                "docs_url": "https://donnees.hydroquebec.com/explore/dataset/pannes-interruptions/information/"
-            },
         )
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "HydroQuebecOutagesOptionsFlow":
         return HydroQuebecOutagesOptionsFlow(config_entry)
 
 
 class HydroQuebecOutagesOptionsFlow(config_entries.OptionsFlow):
-    """Handle options (add/edit/remove locations)."""
+    """Handle options: add / remove monitored locations."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
         self._locations: list[dict[str, Any]] = list(
             config_entry.data.get(CONF_LOCATIONS, [])
         )
-        self._edit_index: int | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Main options menu."""
-        return self.async_show_menu(
+        """Show action selector: add or remove."""
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "add":
+                return await self.async_step_add_location()
+            if action == "remove":
+                return await self.async_step_remove_location()
+            return self._finish()
+
+        return self.async_show_form(
             step_id="init",
-            menu_options=["add_location", "remove_location", "done"],
+            data_schema=vol.Schema(
+                {
+                    vol.Required("action", default="add"): vol.In(
+                        {
+                            "add": "Add a location",
+                            "remove": "Remove a location",
+                            "done": "Done (save & close)",
+                        }
+                    )
+                }
+            ),
         )
 
     async def async_step_add_location(
@@ -139,18 +151,26 @@ class HydroQuebecOutagesOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             try:
                 name = str(user_input[CONF_LOCATION_NAME]).strip()
+                lat = float(user_input[CONF_LATITUDE])
+                lon = float(user_input[CONF_LONGITUDE])
+                radius = float(user_input[CONF_RADIUS_KM])
+
                 if not name:
                     errors[CONF_LOCATION_NAME] = "name_required"
+                elif not (-90 <= lat <= 90):
+                    errors[CONF_LATITUDE] = "invalid_coordinates"
+                elif not (-180 <= lon <= 180):
+                    errors[CONF_LONGITUDE] = "invalid_coordinates"
                 else:
                     self._locations.append(
                         {
                             CONF_LOCATION_NAME: name,
-                            CONF_LATITUDE: float(user_input[CONF_LATITUDE]),
-                            CONF_LONGITUDE: float(user_input[CONF_LONGITUDE]),
-                            CONF_RADIUS_KM: float(user_input[CONF_RADIUS_KM]),
+                            CONF_LATITUDE: lat,
+                            CONF_LONGITUDE: lon,
+                            CONF_RADIUS_KM: radius,
                         }
                     )
-                    return await self._save_and_finish()
+                    return self._finish()
             except (ValueError, TypeError):
                 errors["base"] = "invalid_coordinates"
 
@@ -163,36 +183,31 @@ class HydroQuebecOutagesOptionsFlow(config_entries.OptionsFlow):
     async def async_step_remove_location(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Remove an existing location."""
+        """Remove a location by name."""
         if not self._locations:
-            return await self._save_and_finish()
+            return self._finish()
 
         if user_input is not None:
-            selected_name = user_input.get("location")
+            selected = user_input.get("location_name")
             self._locations = [
-                loc for loc in self._locations if loc[CONF_LOCATION_NAME] != selected_name
+                loc
+                for loc in self._locations
+                if loc[CONF_LOCATION_NAME] != selected
             ]
-            return await self._save_and_finish()
+            return self._finish()
 
         location_names = [loc[CONF_LOCATION_NAME] for loc in self._locations]
         return self.async_show_form(
             step_id="remove_location",
             data_schema=vol.Schema(
                 {
-                    vol.Required("location"): selector.selector(
-                        {"select": {"options": location_names}}
-                    )
+                    vol.Required("location_name"): vol.In(location_names),
                 }
             ),
         )
 
-    async def async_step_done(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        return await self._save_and_finish()
-
-    async def _save_and_finish(self) -> FlowResult:
-        # Persist locations back into the config entry data
+    def _finish(self) -> FlowResult:
+        """Save updated locations back to config entry data and close options."""
         self.hass.config_entries.async_update_entry(
             self._config_entry,
             data={**self._config_entry.data, CONF_LOCATIONS: self._locations},
