@@ -147,3 +147,7 @@ entities:
 - **Coverage**: All of Québec
 
 ---
+
+## License
+
+MIT
