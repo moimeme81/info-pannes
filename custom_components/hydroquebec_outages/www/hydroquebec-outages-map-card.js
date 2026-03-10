@@ -1,231 +1,264 @@
 /**
- * Hydro-Québec Outages Map Card
- * Lovelace custom card — displays outage polygons + planned interruption
- * polygons on a Leaflet map, sourced from the Hydro-Québec open data API.
+ * Hydro-Québec Outages Map Card  v1.3.0
  *
- * Usage in Lovelace YAML:
+ * Fixes vs 1.2:
+ *  - Leaflet CSS injected into shadowRoot (not document.head) so styles apply
+ *  - Title rendered as plain div — ha-card header="" attr caused overlap
+ *  - invalidateSize() called via ResizeObserver + rAF after Leaflet init
+ *  - Map div height set inline so Leaflet reads it before layout
+ *  - loadStylesheet now accepts a target (shadowRoot or document.head)
+ *
+ * Lovelace YAML:
  *   type: custom:hydroquebec-outages-map-card
- *   title: "Hydro-Québec Outages"          # optional
- *   latitude: 45.5017                       # map centre (optional, uses HA home)
+ *   title: "Hydro-Québec Outages"   # optional
+ *   latitude: 45.5017               # map centre (optional, defaults to HA home)
  *   longitude: -73.5673
- *   zoom: 10                                # initial zoom (default 10)
- *   height: 500                             # card height px (default 500)
- *   locations:                              # optional pins
+ *   zoom: 10
+ *   height: 500
+ *   locations:
  *     - name: Home
  *       latitude: 45.5017
  *       longitude: -73.5673
+ *       radius_km: 5
  */
 
-const CARD_VERSION = "1.2.0";
-const DATA_URL = "/api/hydroquebec_outages/data";
+const CARD_VERSION = "1.3.0";
+const DATA_URL     = "/api/hydroquebec_outages/data";
+const LEAFLET_JS   = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 
-const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-const LEAFLET_JS  = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-const JSZIP_JS    = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-
-// ── Palette ────────────────────────────────────────────────────────────────
 const COLOR = {
-  outage:         { fill: "#e53935", border: "#b71c1c" },
-  planned:        { fill: "#fb8c00", border: "#e65100" },
-  locationPin:    "#1565c0",
-  radiusCircle:   { fill: "#1565c020", border: "#1565c0" },
+  outage:       { fill: "#e53935", border: "#b71c1c" },
+  planned:      { fill: "#fb8c00", border: "#e65100" },
+  locationPin:  "#1565c0",
+  radius:       { fill: "rgba(21,101,192,0.08)", border: "#1565c0" },
 };
 
-// ── KML polygon parser ─────────────────────────────────────────────────────
+// ── KML parser ──────────────────────────────────────────────────────────────
 function parseKmlPolygons(kmlText) {
   if (!kmlText) return [];
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(kmlText, "text/xml");
-  const polygons = [];
-
-  // Each <Placemark> may have one or more <Polygon> children
+  const doc = new DOMParser().parseFromString(kmlText, "text/xml");
+  const out = [];
   doc.querySelectorAll("Placemark").forEach(pm => {
-    const name = pm.querySelector("name")?.textContent?.trim() || "";
-    const desc = pm.querySelector("description")?.textContent?.trim() || "";
-
+    const name = pm.querySelector("name")?.textContent?.trim() ?? "";
+    const desc = pm.querySelector("description")?.textContent?.trim() ?? "";
     pm.querySelectorAll("Polygon").forEach(poly => {
-      const outerRing = poly.querySelector("outerBoundaryIs coordinates,outerBoundaryIs > LinearRing > coordinates");
-      if (!outerRing) return;
-
-      const coords = outerRing.textContent.trim()
+      // Handle both namespace variants of the coordinates element
+      const coordEl =
+        poly.querySelector("outerBoundaryIs coordinates") ||
+        poly.querySelector("outerBoundaryIs LinearRing coordinates") ||
+        poly.querySelector("coordinates");
+      if (!coordEl) return;
+      const coords = coordEl.textContent.trim()
         .split(/\s+/)
         .map(t => {
-          const parts = t.split(",");
-          if (parts.length < 2) return null;
-          const lon = parseFloat(parts[0]);
-          const lat = parseFloat(parts[1]);
-          if (isNaN(lat) || isNaN(lon)) return null;
-          return [lat, lon];   // Leaflet uses [lat, lon]
+          const p = t.split(",");
+          const lon = parseFloat(p[0]), lat = parseFloat(p[1]);
+          return (isNaN(lat) || isNaN(lon)) ? null : [lat, lon];
         })
         .filter(Boolean);
-
-      if (coords.length > 2) {
-        polygons.push({ name, desc, coords });
-      }
+      if (coords.length > 2) out.push({ name, desc, coords });
     });
   });
-
-  return polygons;
+  return out;
 }
 
-// ── Async script loader ────────────────────────────────────────────────────
+// ── Script loader (idempotent) ───────────────────────────────────────────────
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
-    const s = document.createElement("script");
-    s.src = src; s.onload = resolve; s.onerror = reject;
+    const s = Object.assign(document.createElement("script"),
+      { src, onload: resolve, onerror: reject });
     document.head.appendChild(s);
   });
 }
 
-function loadStylesheet(href) {
-  if (document.querySelector(`link[href="${href}"]`)) return;
-  const l = document.createElement("link");
-  l.rel = "stylesheet"; l.href = href;
-  document.head.appendChild(l);
+// ── Leaflet CSS must go into the shadow root, not document.head ─────────────
+async function injectLeafletCss(shadowRoot) {
+  // Fetch the CSS text and inject as a <style> so it scopes to the shadow DOM
+  if (shadowRoot.querySelector("#leaflet-style")) return;
+  try {
+    const res  = await fetch(LEAFLET_CSS_URL);
+    const text = await res.text();
+    const style = document.createElement("style");
+    style.id = "leaflet-style";
+    // Leaflet uses .leaflet-container and children — no adjustment needed
+    style.textContent = text;
+    shadowRoot.insertBefore(style, shadowRoot.firstChild);
+  } catch (e) {
+    console.warn("[HQ Map] Could not inject Leaflet CSS:", e);
+  }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 class HydroQuebecOutagesMapCard extends HTMLElement {
 
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._config = {};
-    this._map = null;
-    this._outageLayer = null;
-    this._plannedLayer = null;
-    this._pinLayer = null;
-    this._radiusLayer = null;
-    this._loaded = false;
+    this._map          = null;
+    this._layers       = {};
+    this._hass         = null;
+    this._config       = {};
+    this._mapReady     = false;
+    this._pendingData  = null;
     this._refreshTimer = null;
   }
 
-  // ── Lovelace lifecycle ───────────────────────────────────────────────────
+  // ── Lovelace API ────────────────────────────────────────────────────────────
 
-  setConfig(config) {
+  setConfig(cfg) {
     this._config = {
-      title:     config.title     ?? "Hydro-Québec Outages",
-      latitude:  config.latitude  ?? null,
-      longitude: config.longitude ?? null,
-      zoom:      config.zoom      ?? 10,
-      height:    config.height    ?? 500,
-      locations: config.locations ?? [],
+      title:     cfg.title     ?? "Hydro-Québec Outages",
+      latitude:  cfg.latitude  ?? null,
+      longitude: cfg.longitude ?? null,
+      zoom:      cfg.zoom      ?? 10,
+      height:    cfg.height    ?? 500,
+      locations: cfg.locations ?? [],
     };
-    this._buildShell();
+    this._buildSkeleton();
   }
 
   set hass(hass) {
+    const first = !this._hass;
     this._hass = hass;
-    if (!this._loaded) {
-      this._loaded = true;
-      this._initMap();
-    }
+    if (first) this._boot();
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
     if (this._map) { this._map.remove(); this._map = null; }
+    this._mapReady = false;
   }
 
-  // ── DOM skeleton ─────────────────────────────────────────────────────────
+  getCardSize() { return Math.ceil(this._config.height / 50) + 2; }
 
-  _buildShell() {
-    const cfg = this._config;
+  static getStubConfig() {
+    return { type: "custom:hydroquebec-outages-map-card", title: "Hydro-Québec Outages" };
+  }
+
+  // ── DOM skeleton (no ha-card header attr — causes overlap) ──────────────────
+
+  _buildSkeleton() {
+    const { height, title } = this._config;
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; }
-        ha-card { overflow: hidden; }
-        #map { width: 100%; height: ${cfg.height}px; background: #e8e0d8; }
-        #status-bar {
-          display: flex; align-items: center; gap: 8px;
-          padding: 6px 12px; font-size: 12px;
-          background: var(--card-background-color, #fff);
-          color: var(--secondary-text-color, #666);
-          border-top: 1px solid var(--divider-color, #e0e0e0);
+        :host       { display: block; }
+        ha-card     { display: flex; flex-direction: column; overflow: hidden; }
+        .card-title {
+          padding: 12px 16px 4px;
+          font-size: 1.1em; font-weight: 500;
+          color: var(--primary-text-color, #212121);
         }
-        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-        .dot-outage  { background: ${COLOR.outage.fill}; }
-        .dot-planned { background: ${COLOR.planned.fill}; }
-        #refresh-btn {
-          margin-left: auto; cursor: pointer; padding: 2px 8px;
-          border: 1px solid var(--divider-color, #ccc);
-          border-radius: 4px; background: transparent;
-          color: var(--primary-color, #03a9f4); font-size: 12px;
-        }
-        #last-updated { margin-left: 4px; font-style: italic; }
-        #loading-overlay {
-          position: absolute; inset: 0;
+        .map-wrap   { position: relative; flex: 1; }
+        #map        { width: 100%; height: ${height}px; }
+        #overlay    {
+          position: absolute; inset: 0; z-index: 800;
           display: flex; align-items: center; justify-content: center;
-          background: rgba(255,255,255,0.7); font-size: 14px;
-          color: #555; pointer-events: none; z-index: 500;
+          background: rgba(255,255,255,0.75);
+          font-size: 13px; color: #444; pointer-events: none;
         }
-        .map-wrapper { position: relative; }
+        .status-bar {
+          display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+          padding: 6px 12px; font-size: 12px;
+          color: var(--secondary-text-color, #555);
+          border-top: 1px solid var(--divider-color, #e0e0e0);
+          background: var(--card-background-color, #fff);
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+        .dot-out  { background: ${COLOR.outage.fill}; }
+        .dot-plan { background: ${COLOR.planned.fill}; }
+        #lu   { margin-left: auto; font-style: italic; }
+        #btn  {
+          cursor: pointer; padding: 2px 8px; font-size: 12px;
+          border: 1px solid var(--divider-color, #ccc); border-radius: 4px;
+          background: transparent; color: var(--primary-color, #03a9f4);
+        }
       </style>
-      <ha-card header="${cfg.title}">
-        <div class="map-wrapper">
+      <ha-card>
+        ${title ? `<div class="card-title">${title}</div>` : ""}
+        <div class="map-wrap">
           <div id="map"></div>
-          <div id="loading-overlay">Loading map…</div>
+          <div id="overlay">Loading…</div>
         </div>
-        <div id="status-bar">
-          <span class="dot dot-outage"></span><span>Active outage</span>
-          <span class="dot dot-planned"></span><span>Planned interruption</span>
-          <span id="last-updated"></span>
-          <button id="refresh-btn" title="Refresh now">↺ Refresh</button>
+        <div class="status-bar">
+          <span class="dot dot-out"></span><span>Active outage</span>
+          <span class="dot dot-plan"></span><span>Planned interruption</span>
+          <span id="lu"></span>
+          <button id="btn">↺ Refresh</button>
         </div>
-      </ha-card>
-    `;
-    this.shadowRoot.getElementById("refresh-btn")
+      </ha-card>`;
+
+    this.shadowRoot.getElementById("btn")
       .addEventListener("click", () => this._fetchAndRender());
   }
 
-  // ── Map initialisation ───────────────────────────────────────────────────
+  // ── Boot: inject Leaflet CSS into shadow root FIRST, then load JS ────────────
 
-  async _initMap() {
+  async _boot() {
     try {
-      loadStylesheet(LEAFLET_CSS);
+      // 1. Inject Leaflet CSS into the shadow root (critical fix)
+      await injectLeafletCss(this.shadowRoot);
+      // 2. Load Leaflet JS into the global scope (only once across all instances)
       await loadScript(LEAFLET_JS);
-
-      const cfg = this._config;
-      const mapEl = this.shadowRoot.getElementById("map");
-
-      const centreLat = cfg.latitude  ?? this._hass?.config?.latitude  ?? 46.8;
-      const centreLon = cfg.longitude ?? this._hass?.config?.longitude ?? -71.2;
-
-      // Leaflet needs a real DOM node — use the shadow root element
-      const L = window.L;
-      this._map = L.map(mapEl, { zoomControl: true }).setView([centreLat, centreLon], cfg.zoom);
-
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19,
-      }).addTo(this._map);
-
-      this._outageLayer  = L.layerGroup().addTo(this._map);
-      this._plannedLayer = L.layerGroup().addTo(this._map);
-      this._pinLayer     = L.layerGroup().addTo(this._map);
-      this._radiusLayer  = L.layerGroup().addTo(this._map);
-
-      // Layer control
-      L.control.layers(null, {
-        "🔴 Active outages":        this._outageLayer,
-        "🟠 Planned interruptions": this._plannedLayer,
-        "📍 Monitored locations":   this._pinLayer,
-        "⭕ Search radius":          this._radiusLayer,
-      }, { collapsed: false }).addTo(this._map);
-
-      await this._fetchAndRender();
-
-      // Auto-refresh every 15 min
-      this._refreshTimer = setInterval(() => this._fetchAndRender(), 15 * 60 * 1000);
-
+      // 3. Init the map
+      await this._initMap();
     } catch (err) {
-      console.error("[HQ Map Card] Init error:", err);
-      this._setOverlay("⚠ Failed to load map: " + err.message);
+      console.error("[HQ Map Card] Boot error:", err);
+      this._setOverlay("⚠ " + err.message);
     }
   }
 
-  // ── Data fetch + render ──────────────────────────────────────────────────
+  // ── Map init ────────────────────────────────────────────────────────────────
+
+  async _initMap() {
+    const L   = window.L;
+    const cfg = this._config;
+    const mapEl = this.shadowRoot.getElementById("map");
+
+    const lat = cfg.latitude  ?? this._hass?.config?.latitude  ?? 46.8;
+    const lon = cfg.longitude ?? this._hass?.config?.longitude ?? -71.2;
+
+    this._map = L.map(mapEl, { zoomControl: true }).setView([lat, lon], cfg.zoom);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(this._map);
+
+    const mk = (label) => L.layerGroup().addTo(this._map);
+    this._layers = {
+      outage:  mk(), planned: mk(),
+      pins:    mk(), radius:  mk(),
+    };
+
+    L.control.layers(null, {
+      "🔴 Active outages":        this._layers.outage,
+      "🟠 Planned interruptions": this._layers.planned,
+      "📍 Monitored locations":   this._layers.pins,
+      "⭕ Search radius":          this._layers.radius,
+    }, { collapsed: false }).addTo(this._map);
+
+    // CRITICAL: tell Leaflet the map div has the right size now that layout settled
+    // Use rAF + a small delay to guarantee the card is painted
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        this._map?.invalidateSize();
+      }, 100);
+    });
+
+    // Also watch for resize (sidebar open/close, panel switch)
+    if (window.ResizeObserver) {
+      this._resizeObs = new ResizeObserver(() => this._map?.invalidateSize());
+      this._resizeObs.observe(mapEl);
+    }
+
+    this._mapReady = true;
+    await this._fetchAndRender();
+    this._refreshTimer = setInterval(() => this._fetchAndRender(), 15 * 60 * 1000);
+  }
+
+  // ── Fetch ────────────────────────────────────────────────────────────────────
 
   async _fetchAndRender() {
     this._setOverlay("Fetching outage data…");
@@ -233,187 +266,151 @@ class HydroQuebecOutagesMapCard extends HTMLElement {
       const resp = await fetch(DATA_URL, {
         headers: { Authorization: `Bearer ${this._hass.auth.data.access_token}` },
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) throw new Error(`API returned HTTP ${resp.status}`);
       const data = await resp.json();
       this._render(data);
     } catch (err) {
       console.error("[HQ Map Card] Fetch error:", err);
-      this._setOverlay("⚠ Could not load outage data: " + err.message);
+      this._setOverlay("⚠ " + err.message);
     }
   }
 
+  // ── Render ───────────────────────────────────────────────────────────────────
+
   _render(data) {
-    const L = window.L;
+    if (!this._mapReady) { this._pendingData = data; return; }
+    const L   = window.L;
     const cfg = this._config;
+    Object.values(this._layers).forEach(l => l.clearLayers());
 
-    this._outageLayer.clearLayers();
-    this._plannedLayer.clearLayers();
-    this._pinLayer.clearLayers();
-    this._radiusLayer.clearLayers();
+    const bisPolys = parseKmlPolygons(data.bis_kml);
+    const aipPolys = parseKmlPolygons(data.aip_kml);
 
-    // ── Draw KML polygons ──────────────────────────────────────────────────
-    const bisPolygons = parseKmlPolygons(data.bis_kml);
-    const aipPolygons = parseKmlPolygons(data.aip_kml);
-
-    bisPolygons.forEach(({ name, desc, coords }) => {
+    // ── Active outage polygons
+    bisPolys.forEach(({ name, desc, coords }) => {
       L.polygon(coords, {
-        color:       COLOR.outage.border,
-        fillColor:   COLOR.outage.fill,
-        fillOpacity: 0.35,
-        weight:      1.5,
+        color: COLOR.outage.border, fillColor: COLOR.outage.fill,
+        fillOpacity: 0.35, weight: 1.5,
       }).bindPopup(`<b>🔴 Active Outage</b>${name ? `<br>${name}` : ""}${desc ? `<br><small>${desc}</small>` : ""}`)
-        .addTo(this._outageLayer);
+        .addTo(this._layers.outage);
     });
 
-    aipPolygons.forEach(({ name, desc, coords }) => {
+    // ── Planned interruption polygons
+    aipPolys.forEach(({ name, desc, coords }) => {
       L.polygon(coords, {
-        color:       COLOR.planned.border,
-        fillColor:   COLOR.planned.fill,
-        fillOpacity: 0.30,
-        weight:      1.5,
-        dashArray:   "6 4",
+        color: COLOR.planned.border, fillColor: COLOR.planned.fill,
+        fillOpacity: 0.30, weight: 1.5, dashArray: "6 4",
       }).bindPopup(`<b>🟠 Planned Interruption</b>${name ? `<br>${name}` : ""}${desc ? `<br><small>${desc}</small>` : ""}`)
-        .addTo(this._plannedLayer);
+        .addTo(this._layers.planned);
     });
 
-    // ── Draw outage point markers (fallback / extra info) ──────────────────
+    // ── Outage point markers (one per marker JSON record)
     (data.outages ?? []).forEach(o => {
-      if (o.latitude == null || o.longitude == null) return;
-      const popup = this._outagePopup(o);
+      if (o.latitude == null) return;
       L.circleMarker([o.latitude, o.longitude], {
-        radius: 6, color: COLOR.outage.border,
-        fillColor: COLOR.outage.fill, fillOpacity: 0.9, weight: 1,
-      }).bindPopup(popup).addTo(this._outageLayer);
+        radius: 7, color: COLOR.outage.border,
+        fillColor: COLOR.outage.fill, fillOpacity: 0.9, weight: 1.5,
+      }).bindPopup(this._outagePopup(o)).addTo(this._layers.outage);
     });
 
+    // ── Planned point markers
     (data.planned ?? []).forEach(p => {
-      if (p.latitude == null || p.longitude == null) return;
-      const popup = this._plannedPopup(p);
+      if (p.latitude == null) return;
       L.circleMarker([p.latitude, p.longitude], {
-        radius: 6, color: COLOR.planned.border,
-        fillColor: COLOR.planned.fill, fillOpacity: 0.9, weight: 1,
-        dashArray: "3 3",
-      }).bindPopup(popup).addTo(this._plannedLayer);
+        radius: 7, color: COLOR.planned.border,
+        fillColor: COLOR.planned.fill, fillOpacity: 0.9, weight: 1.5,
+      }).bindPopup(this._plannedPopup(p)).addTo(this._layers.planned);
     });
 
-    // ── Draw configured location pins + radius circles ─────────────────────
-    const locations = cfg.locations.length > 0
+    // ── Location pins + radius rings
+    const locations = cfg.locations.length
       ? cfg.locations
-      : (cfg.latitude != null
-          ? [{ name: "Monitored location", latitude: cfg.latitude, longitude: cfg.longitude, radius_km: null }]
-          : []);
+      : cfg.latitude != null
+        ? [{ name: "Location", latitude: cfg.latitude, longitude: cfg.longitude }]
+        : [];
 
     locations.forEach(loc => {
-      if (loc.latitude == null || loc.longitude == null) return;
-
-      const icon = L.divIcon({
+      if (loc.latitude == null) return;
+      const pin = L.divIcon({
         className: "",
-        html: `<div style="
-          width:14px;height:14px;border-radius:50%;
-          background:${COLOR.locationPin};border:2px solid white;
-          box-shadow:0 1px 4px #0006;
-        "></div>`,
+        html: `<div style="width:14px;height:14px;border-radius:50%;
+          background:${COLOR.locationPin};border:2px solid #fff;
+          box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
         iconAnchor: [7, 7],
       });
-
-      L.marker([loc.latitude, loc.longitude], { icon })
+      L.marker([loc.latitude, loc.longitude], { icon: pin })
         .bindPopup(`<b>📍 ${loc.name ?? "Location"}</b>`)
-        .addTo(this._pinLayer);
+        .addTo(this._layers.pins);
 
       if (loc.radius_km) {
         L.circle([loc.latitude, loc.longitude], {
           radius: loc.radius_km * 1000,
-          color:       COLOR.radiusCircle.border,
-          fillColor:   COLOR.radiusCircle.fill,
-          fillOpacity: 1,
-          weight:      1,
-          dashArray:   "4 4",
-        }).bindTooltip(`${loc.name ?? "Location"} — ${loc.radius_km} km radius`, { sticky: true })
-          .addTo(this._radiusLayer);
+          color: COLOR.radius.border, fillColor: COLOR.radius.fill,
+          fillOpacity: 1, weight: 1.5, dashArray: "5 5",
+        }).bindTooltip(`${loc.name ?? "Location"} — ${loc.radius_km} km`, { sticky: true })
+          .addTo(this._layers.radius);
       }
     });
 
-    // ── Update status bar ──────────────────────────────────────────────────
+    // ── Status bar timestamp
     const lu = data.last_updated
       ? new Date(data.last_updated + "Z").toLocaleTimeString()
       : "";
-    const el = this.shadowRoot.getElementById("last-updated");
-    if (el) el.textContent = lu ? `Updated: ${lu}` : "";
+    const luEl = this.shadowRoot.getElementById("lu");
+    if (luEl) luEl.textContent = lu ? `Updated: ${lu}` : "";
 
-    this._setOverlay(null);   // hide overlay
+    this._setOverlay(null);
 
-    // Auto-fit bounds if polygons exist and no explicit centre configured
-    if (cfg.latitude == null && (bisPolygons.length + aipPolygons.length) > 0) {
+    // Auto-fit if we have polygons and no explicit centre
+    if (cfg.latitude == null && bisPolys.length + aipPolys.length > 0) {
       try {
-        const allCoords = [...bisPolygons, ...aipPolygons].flatMap(p => p.coords);
-        if (allCoords.length) this._map.fitBounds(allCoords, { padding: [20, 20] });
+        const all = [...bisPolys, ...aipPolys].flatMap(p => p.coords);
+        if (all.length) this._map.fitBounds(all, { padding: [30, 30] });
       } catch (_) {}
     }
+
+    // One more invalidateSize after render (layer control may have shifted layout)
+    requestAnimationFrame(() => this._map?.invalidateSize());
   }
 
-  // ── Popup builders ────────────────────────────────────────────────────────
+  // ── Popup helpers ─────────────────────────────────────────────────────────────
 
   _outagePopup(o) {
-    return `
-      <b>🔴 Active Outage</b><br>
+    return `<b>🔴 Active Outage</b><br>
       <b>Customers:</b> ${o.customers_affected ?? "?"}<br>
       <b>Cause:</b> ${o.cause ?? "?"}<br>
       <b>Status:</b> ${o.status ?? "?"}<br>
       <b>Started:</b> ${o.start_time ?? "?"}<br>
-      <b>Est. end:</b> ${o.estimated_end_time ?? "?"}
-    `;
+      <b>Est. end:</b> ${o.estimated_end_time ?? "?"}`;
   }
 
   _plannedPopup(p) {
-    return `
-      <b>🟠 Planned Interruption</b><br>
+    return `<b>🟠 Planned Interruption</b><br>
       <b>Customers:</b> ${p.customers_affected ?? "?"}<br>
       <b>Cause:</b> ${p.cause ?? "?"}<br>
       <b>Status:</b> ${p.status ?? "?"}<br>
       <b>Start:</b> ${p.planned_start ?? "?"}<br>
-      <b>End:</b> ${p.planned_end ?? "?"}
-    `;
+      <b>End:</b> ${p.planned_end ?? "?"}`;
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Overlay helper ────────────────────────────────────────────────────────────
 
   _setOverlay(msg) {
-    const el = this.shadowRoot.getElementById("loading-overlay");
+    const el = this.shadowRoot.getElementById("overlay");
     if (!el) return;
-    if (msg) { el.textContent = msg; el.style.display = "flex"; }
-    else      { el.style.display = "none"; }
-  }
-
-  // ── Lovelace card meta ────────────────────────────────────────────────────
-
-  getCardSize() {
-    return Math.ceil(this._config.height / 50) + 1;
-  }
-
-  static getConfigElement() {
-    return null; // no visual editor for now
-  }
-
-  static getStubConfig() {
-    return {
-      type: "custom:hydroquebec-outages-map-card",
-      title: "Hydro-Québec Outages",
-      zoom: 10,
-      height: 500,
-    };
+    el.textContent    = msg ?? "";
+    el.style.display  = msg ? "flex" : "none";
   }
 }
 
 customElements.define("hydroquebec-outages-map-card", HydroQuebecOutagesMapCard);
 
-// Register with HACS / Lovelace card picker
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type:        "hydroquebec-outages-map-card",
-  name:        "Hydro-Québec Outages Map",
-  description: "Map showing active outages and planned interruptions from Hydro-Québec.",
-  preview:     false,
-  documentationURL: "https://github.com/YOUR_USERNAME/hydroquebec-outages-ha",
+  type: "hydroquebec-outages-map-card",
+  name: "Hydro-Québec Outages Map",
+  description: "Map of active outages and planned interruptions from Hydro-Québec open data.",
+  preview: false,
 });
 
 console.info(
