@@ -3,25 +3,19 @@
     "step": {
       "user": {
         "title": "Hydro-Québec Outages — Add Location",
-        "description": "Configure a location to monitor for Hydro-Québec outages and planned interruptions. The integration will check for events within the specified radius. Data is refreshed every 15 minutes.\n\nData source: {docs_url}",
+        "description": "Monitor a location for Hydro-Québec outages and planned interruptions. Data is refreshed every 15 minutes from the official open data API.",
         "data": {
           "name": "Location name",
           "latitude": "Latitude",
           "longitude": "Longitude",
           "radius_km": "Search radius (km)"
-        },
-        "data_description": {
-          "name": "A friendly name for this monitored location (e.g. Home, Chalet, Office)",
-          "latitude": "Latitude of the location to monitor",
-          "longitude": "Longitude of the location to monitor",
-          "radius_km": "Radius in kilometres to search for outages around this location"
         }
       }
     },
     "error": {
       "invalid_coordinates": "Invalid coordinates — please enter valid numeric values.",
       "name_required": "A location name is required.",
-      "cannot_connect": "Could not connect to Hydro-Québec API. Please try again later."
+      "cannot_connect": "Could not connect to the Hydro-Québec API. Please try again."
     },
     "abort": {
       "already_configured": "This location is already configured."
@@ -31,10 +25,8 @@
     "step": {
       "init": {
         "title": "Manage Locations",
-        "menu_options": {
-          "add_location": "Add a location",
-          "remove_location": "Remove a location",
-          "done": "Done"
+        "data": {
+          "action": "What would you like to do?"
         }
       },
       "add_location": {
@@ -49,7 +41,7 @@
       "remove_location": {
         "title": "Remove Location",
         "data": {
-          "location": "Select location to remove"
+          "location_name": "Select location to remove"
         }
       }
     },
