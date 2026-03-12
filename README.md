@@ -146,8 +146,3 @@ entities:
 - **Update frequency**: Every 15 minutes (matching Hydro-Québec's own refresh rate)
 - **Coverage**: All of Québec
 
----
-
-## License
-
-MIT
