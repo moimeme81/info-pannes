@@ -1,7 +1,7 @@
 {
   "domain": "hydroquebec_outages",
   "name": "Hydro-Québec Outages",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "documentation": "https://github.com/YOUR_USERNAME/hydroquebec-outages-ha",
   "issue_tracker": "https://github.com/YOUR_USERNAME/hydroquebec-outages-ha/issues",
   "requirements": [],
