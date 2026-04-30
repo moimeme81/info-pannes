@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Recherche d'adresse détaillée",
+        "description": "Remplissez au moins un champ pour rechercher l'adresse à surveiller.",
+        "data": {
+          "civic_number": "Numéro civique",
+          "street": "Nom de la rue",
+          "city": "Ville",
+          "postal_code": "Code postal"
+        }
+      },
+      "select": {
+        "title": "Confirmer l'adresse",
+        "description": "Sélectionnez la bonne adresse trouvée par le système GPS.",
+        "data": {
+          "selected_address": "Choisir l'adresse"
+        }
+      }
+    },
+    "error": {
+      "no_results": "Aucune adresse trouvée avec ces critères.",
+      "empty_form": "Vous devez remplir au moins un champ pour lancer la recherche."
+    },
+    "abort": {
+      "already_configured": "Cette adresse exacte est déjà configurée."
+    }
+  }
+}
