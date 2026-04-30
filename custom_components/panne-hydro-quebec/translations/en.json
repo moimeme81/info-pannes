@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Detailed Address Search",
+        "description": "Fill in at least one field to search for the address.",
+        "data": {
+          "civic_number": "Civic number",
+          "street": "Street name",
+          "city": "City",
+          "postal_code": "Postal code"
+        }
+      },
+      "select": {
+        "title": "Confirm Address",
+        "data": {
+          "selected_address": "Choose address"
+        }
+      }
+    },
+    "error": {
+      "no_results": "No address found with these criteria.",
+      "empty_form": "You must fill in at least one field to search."
+    },
+    "abort": {
+      "already_configured": "This address is already configured."
+    }
+  }
+}
