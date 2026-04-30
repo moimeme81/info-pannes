@@ -1,148 +1,58 @@
-# Hydro-Québec Outages — Home Assistant Integration
+# ⚡ Pannes Hydro-Québec pour Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
-Monitor **Hydro-Québec power outages and planned service interruptions** near any location, directly inside Home Assistant. Data is sourced from the official [Hydro-Québec open data API](https://donnees.hydroquebec.com/explore/dataset/pannes-interruptions/information/) and refreshed every 15 minutes.
+Une intégration personnalisée (Custom Component) pour Home Assistant permettant de surveiller les pannes d'électricité d'Hydro-Québec pour vos adresses spécifiques. 
 
----
+Entièrement configurable via l'interface utilisateur, elle utilise le puissant moteur de géolocalisation ArcGIS pour trouver votre adresse exacte (sans clé API) et interroge les données ouvertes d'Hydro-Québec toutes les 15 minutes.
 
-## Features
+## ✨ Fonctionnalités
 
-- 🔴 **Active outage detection** — binary sensor turns `on` when an outage is found within your configured radius
-- 📅 **Planned interruption detection** — binary sensor turns `on` for upcoming scheduled work
-- 📊 **Count sensors** — number of nearby outages, planned interruptions, and total customers affected
-- 📍 **Multiple locations** — monitor your home, cottage, office, or any address
-- 🇫🇷 **Bilingual UI** — English and French config flow
-- ⚡ **Rich attributes** — distance, cause, status, estimated restoration time, affected customers, coordinates of all nearby events
+Pour chaque adresse ajoutée, l'intégration crée un "Appareil" contenant **8 capteurs détaillés** :
 
----
+* **Statut du réseau :** En service ou Panne détectée.
+* **Total pannes (QC) :** Le nombre total de pannes actives au Québec.
+* **Clients affectés (QC) :** Le nombre total de clients dans le noir dans la province.
+* **Clients affectés (Local) :** Le nombre de vos voisins touchés par la même panne.
+* **Type de panne :** Panne imprévue ou Interruption planifiée.
+* **Cause de la panne :** Végétation, bris d'équipement, conditions météo, etc.
+* **Statut des travaux :** Équipe en route, équipe au travail, en évaluation, etc.
+* **Rétablissement prévu :** Heure estimée du retour du courant fournie par Hydro-Québec.
 
-## Installation
+## 📦 Installation
 
-### Via HACS (recommended)
+### Méthode 1 : Via HACS (Recommandée)
+C'est la méthode la plus simple pour installer et garder l'intégration à jour.
 
-1. Open HACS → Integrations → ⋮ → **Custom repositories**
-2. Add `https://github.com/moimeme81/info-pannes` as an **Integration**
-3. Search for **Hydro-Québec Outages** and install
-4. Restart Home Assistant
+1. Ouvrez Home Assistant et allez dans **HACS** > **Intégrations**.
+2. Cliquez sur les trois petits points en haut à droite et sélectionnez **Dépôts personnalisés** (Custom repositories).
+3. Ajoutez l'URL de ce dépôt : `https://github.com/moimeme81/info-pannes`
+4. Choisissez la catégorie **Intégration** et cliquez sur **Ajouter**.
+5. Cherchez "Pannes Hydro-Québec" dans HACS, cliquez dessus puis sur **Télécharger**.
+6. **Redémarrez Home Assistant**.
 
-### Manual
+### Méthode 2 : Manuelle
+1. Téléchargez le code source depuis GitHub.
+2. Copiez le dossier `custom_components/panne-hydro-quebec` dans le dossier `custom_components` de votre configuration Home Assistant.
+3. **Redémarrez Home Assistant**.
 
-1. Copy the `custom_components/hydroquebec_outages` folder into your HA `config/custom_components/` directory
-2. Restart Home Assistant
+## ⚙️ Configuration
 
----
+L'intégration se configure entièrement depuis l'interface utilisateur, aucun code YAML n'est requis !
 
-## Configuration
+1. Allez dans **Paramètres** > **Appareils et services**.
+2. Cliquez sur le bouton **+ Ajouter une intégration** en bas à droite.
+3. Cherchez **Pannes Hydro-Québec**.
+4. Remplissez le formulaire de recherche (Numéro civique, Rue, Ville). *Astuce : vous pouvez simplement entrer un code postal ou un nom de rue partiel, le moteur de recherche (ArcGIS) est très tolérant.*
+5. Sélectionnez votre adresse exacte dans le menu déroulant qui s'affiche pour confirmer.
+6. C'est fait ! Vous pouvez répéter l'opération pour ajouter d'autres adresses (bureau, chalet, parents, etc.).
 
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **Hydro-Québec Outages**
-3. Enter:
-   - **Location name** — a friendly label (e.g. "Home", "Chalet")
-   - **Latitude / Longitude** — defaults to your HA home location
-   - **Search radius (km)** — how far to look (default: 5 km)
-4. Click **Submit**
+## 🛠️ Dépannage
 
-### Adding more locations
+* **L'intégration n'apparaît pas dans la liste après l'installation ?** 
+Videz la mémoire cache de votre navigateur (`Ctrl+F5` ou `Cmd+Shift+R`) ou effacez le cache de l'application mobile Home Assistant.
+* **Aucun résultat pour mon adresse ?** 
+Essayez d'être moins spécifique (retirez le numéro civique et cherchez uniquement la rue et la ville) pour voir ce que le système GPS vous propose dans le menu déroulant.
 
-Go to **Settings → Devices & Services → Hydro-Québec Outages → Configure** and choose **Add a location**.
+## ⚖️ Avertissement
 
----
-
-## Entities Created Per Location
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `binary_sensor.hydroquebec_<name>_active_outage` | Binary Sensor | `on` = active outage nearby |
-| `binary_sensor.hydroquebec_<name>_planned_interruption` | Binary Sensor | `on` = planned interruption nearby |
-| `sensor.hydroquebec_<name>_nearby_outages` | Sensor | Count of active outages in radius |
-| `sensor.hydroquebec_<name>_nearby_planned_interruptions` | Sensor | Count of planned interruptions in radius |
-| `sensor.hydroquebec_<name>_customers_affected_nearby` | Sensor | Total customers affected nearby |
-
-### Attribute examples (active outage binary sensor)
-
-```yaml
-location_name: Home
-monitored_latitude: 45.5017
-monitored_longitude: -73.5673
-radius_km: 5.0
-outage_count: 2
-closest_outage_distance_km: 1.3
-closest_outage_customers_affected: 44
-closest_outage_start_time: "2024-01-15 08:24:30"
-closest_outage_estimated_end: "2024-01-15 12:15:00"
-closest_outage_cause: "Equipment failure"
-closest_outage_status: "Crew at work"
-closest_outage_latitude: 45.4987
-closest_outage_longitude: -73.5512
-all_outages:
-  - distance_km: 1.3
-    customers_affected: 44
-    ...
-```
-
----
-
-## Automation Examples
-
-### Notify on new outage
-
-```yaml
-automation:
-  - alias: "Notify on Hydro-Québec outage nearby"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.hydroquebec_home_active_outage
-        to: "on"
-    action:
-      - service: notify.mobile_app_my_phone
-        data:
-          title: "⚡ Power Outage Nearby"
-          message: >
-            {{ state_attr('binary_sensor.hydroquebec_home_active_outage', 'closest_outage_customers_affected') }}
-            customers affected. Cause: {{ state_attr('binary_sensor.hydroquebec_home_active_outage', 'closest_outage_cause') }}.
-            Est. restoration: {{ state_attr('binary_sensor.hydroquebec_home_active_outage', 'closest_outage_estimated_end') }}.
-```
-
-### Notify on planned interruption tomorrow
-
-```yaml
-automation:
-  - alias: "Notify on planned interruption"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.hydroquebec_home_planned_interruption
-        to: "on"
-    action:
-      - service: notify.mobile_app_my_phone
-        data:
-          title: "🔧 Planned Power Interruption"
-          message: >
-            Scheduled work nearby. Start: {{ state_attr('binary_sensor.hydroquebec_home_planned_interruption', 'closest_planned_start') }},
-            End: {{ state_attr('binary_sensor.hydroquebec_home_planned_interruption', 'closest_planned_end') }}.
-```
-
-### Dashboard Lovelace card
-
-```yaml
-type: entities
-title: Hydro-Québec Status
-entities:
-  - entity: binary_sensor.hydroquebec_home_active_outage
-    name: Active Outage
-  - entity: binary_sensor.hydroquebec_home_planned_interruption
-    name: Planned Interruption
-  - entity: sensor.hydroquebec_home_nearby_outages
-    name: Outages Nearby
-  - entity: sensor.hydroquebec_home_customers_affected_nearby
-    name: Customers Affected
-```
-
----
-
-## Data Source & Update Frequency
-
-- **API**: [Hydro-Québec Open Data](https://donnees.hydroquebec.com/explore/dataset/pannes-interruptions/information/)
-- **Update frequency**: Every 15 minutes (matching Hydro-Québec's own refresh rate)
-- **Coverage**: All of Québec
-
+Cette intégration n'est pas affiliée, sponsorisée ou approuvée par Hydro-Québec. Elle utilise le portail de données ouvertes d'Hydro-Québec. Les données sont fournies à titre indicatif. Ne vous fiez jamais uniquement à ces données pour des décisions critiques de sécurité.
