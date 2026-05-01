@@ -83,8 +83,9 @@ filter:
       options:
         display: marker
         geojson: zone_geographique
+````
 
-Comment fonctionne cette carte magique ?
+### Comment fonctionne cette carte magique ?
 Discrète en temps normal : Grâce à show_empty: false, si le courant circule normalement à toutes vos adresses, la carte disparaît complètement de votre écran.
 
 Auto-gestion : Le filtre sensor.*_statut scannera automatiquement toute nouvelle adresse que vous ajouterez à l'intégration, sans avoir à retoucher ce code YAML.
@@ -93,7 +94,7 @@ Cadrage automatique : L'option auto_fit: true ajuste le niveau de zoom de la car
 
 Note sur le rendu visuel : Lors de pannes mineures (très peu de clients) ou de pannes récentes ("En évaluation"), Hydro-Québec dessine souvent un simple cercle générique autour du point pour protéger la vie privée des clients. Lors de pannes majeures, le système affichera le tracé géométrique complexe qui suit le réseau électrique réel.
 
-🛠️ Dépannage
+## 🛠️ Dépannage
 L'intégration n'apparaît pas dans la liste après l'installation ?
 Videz la mémoire cache de votre navigateur (Ctrl+F5 ou Cmd+Shift+R) ou effacez le cache de l'application mobile Home Assistant.
 
@@ -103,5 +104,5 @@ Essayez d'être moins spécifique (retirez le numéro civique et cherchez unique
 Erreur lors de l'installation ("shapely") ?
 Assurez-vous que votre instance Home Assistant est à jour. L'intégration nécessite une version récente de Python (3.14+) pour compiler ses dépendances géographiques.
 
-⚖️ Avertissement
+## ⚖️ Avertissement
 Cette intégration n'est pas affiliée, sponsorisée ou approuvée par Hydro-Québec. Elle utilise le portail de données ouvertes d'Hydro-Québec. Les données sont fournies à titre indicatif. Ne vous fiez jamais uniquement à ces données pour des décisions critiques de sécurité.
