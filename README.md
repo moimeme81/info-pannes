@@ -1,3 +1,10 @@
+<img
+        src="https://github.com/moimeme81/info-pannes/blob/main/custom_components/panne-hydro-quebec/brand/icon.png" 
+        width=100px
+        title="logo"
+        alt="logo"
+    />
+
 # ⚡ Pannes Hydro-Québec pour Home Assistant
 
 Une intégration personnalisée (Custom Component) pour Home Assistant permettant de surveiller en temps réel les pannes d'électricité sur le réseau d'Hydro-Québec pour vos adresses spécifiques.
