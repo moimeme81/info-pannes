@@ -23,6 +23,8 @@ Pour chaque adresse ajoutée, l'intégration crée un "Appareil" contenant **8 c
 ### Méthode 1 : Via HACS (Recommandée)
 C'est la méthode la plus simple pour installer et garder l'intégration à jour.
 
+[![Installer via HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=moimeme81&repository=info-pannes&category=integration)
+
 1. Ouvrez Home Assistant et allez dans **HACS** > **Intégrations**.
 2. Cliquez sur les trois petits points en haut à droite et sélectionnez **Dépôts personnalisés** (Custom repositories).
 3. Ajoutez l'URL de ce dépôt : `https://github.com/moimeme81/info-pannes`
