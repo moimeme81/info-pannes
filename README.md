@@ -114,21 +114,21 @@ Assurez-vous que votre instance Home Assistant est à jour. L'intégration néce
 ## 🚀 Feuille de route et améliorations futures
 
 * **Optimisation des performances**
-    * **Mise en cache intelligente du KMZ :** Ajouter une logique qui compare la version de l'API avec la dernière vérification. Si la version est identique, réutiliser le polygone en mémoire pour éviter les requêtes HTTP et le parsing XML inutiles, allégeant ainsi le système.
+    * [ ] **Mise en cache intelligente du KMZ :** Ajouter une logique qui compare la version de l'API avec la dernière vérification. Si la version est identique, réutiliser le polygone en mémoire pour éviter les requêtes HTTP et le parsing XML inutiles, allégeant ainsi le système.
 
 * **Améliorations visuelles de la carte**
-    * **Polygones colorés dynamiquement :** Modifier la structure GeoJSON pour injecter des couleurs basées sur le statut des travaux (ex: Rouge pour "En évaluation", Orange pour "Équipe en route", Jaune pour "Au travail", Bleu pour "Interruption planifiée").
+    * [ ] **Polygones colorés dynamiquement :** Modifier la structure GeoJSON pour injecter des couleurs basées sur le statut des travaux (ex: Rouge pour "En évaluation", Orange pour "Équipe en route", Jaune pour "Au travail", Bleu pour "Interruption planifiée").
 
 * **Nouvelles entités et fonctionnalités**
-    * **Capteur de proximité :** Ajouter un capteur qui calcule la distance exacte entre l'adresse suivie et la panne la plus proche.
-    * **Statistiques historiques :** Implémenter le suivi du temps cumulé passé en panne (en heures/minutes) sur le mois en cours.
+    * [ ] **Capteur de proximité :** Ajouter un capteur qui calcule la distance exacte entre l'adresse suivie et la panne la plus proche.
+    * [ ] **Statistiques historiques :** Implémenter le suivi du temps cumulé passé en panne (en heures/minutes) sur le mois en cours.
 
 * **Expérience Utilisateur (UX) et Écosystème**
-    * **Internationalisation (i18n) **
-    * **Blueprints **
+    * [ ] **Internationalisation (i18n) **
+    * [ ] **Blueprints **
 
 * **Configuration avancée**
-    * **Options Flow :** Ajouter un menu de configuration directement dans l'interface utilisateur (UI) de Home Assistant permettant d'ajuster le délai de rafraîchissement des données (SCAN_INTERVAL) sans nécessiter de redémarrage.
+    * [ ] **Options Flow :** Ajouter un menu de configuration directement dans l'interface utilisateur (UI) de Home Assistant permettant d'ajuster le délai de rafraîchissement des données (SCAN_INTERVAL) sans nécessiter de redémarrage.
     * 
 
 ## ⚖️ Avertissement
